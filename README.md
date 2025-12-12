@@ -15,27 +15,25 @@ $ git clone https://github.com/speziato/ocisize
 $ podman build ./ocisize --target cli --tag ocisize
 $ podman run -t --rm ocisize --help
 
-usage: cli.py [-h] [-f {table,json,csv}] [-q] [--no-spinner] image
+usage: ocisize [-h] [-f {table,json,csv}] [-q] image
 
 Query OCI registries for container image sizes across platforms
 
 positional arguments:
-  image                 Container image name (e.g., nginx:latest,
-                        my-public-repo.io/project/image:tag)
+  image                 Container image name (e.g., nginx:latest, quay.io/repo/image:tag)
 
 options:
   -h, --help            show this help message and exit
   -f, --format {table,json,csv}
                         Output format (default: table)
   -q, --quiet           Suppress error messages and spinner
-  --no-spinner          Disable spinner animation
 
 Examples:
   ocisize nginx:latest
   ocisize ghcr.io/immich-app/immich-server:v2.3.1
   ocisize --format json lscr.io/linuxserver/jellyfin:amd64-10.11.4
 
-$ podman run -t --rm ghcr.io/speziato/ocisize:latest nginx:latest
+$ podman run -t --rm ocisize quay.io/skopeo/stable:latest
 ⠹ Fetching manifest for quay.io/skopeo/stable:latest
 Image: quay.io/skopeo/stable:latest                  
 
