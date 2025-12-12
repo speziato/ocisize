@@ -6,6 +6,9 @@ import json
 import urllib.request
 import urllib.error
 import sys
+import concurrent.futures
+from typing import List, Dict, Optional
+
 
 def parse_image_name(image):
     """
@@ -43,7 +46,8 @@ def parse_image_name(image):
         # Check if first part looks like a registry
         is_registry = (
             '.' in first_part or           # domain.com
-            ':' in first_part           # hostname:port
+            ':' in first_part or           # hostname:port
+            first_part == 'localhost'      # localhost
         )
         
         if is_registry:
@@ -177,11 +181,32 @@ def get_formatted_manifest_size(platform_manifest: any):
     for layer in layers:
         total_size += layer.get('size', 0)
     return format_size(total_size)
-                    
+
+def fetch_platform_size(registry: str, repository: str, digest: str, platform_str: str, token: Optional[str] = None) -> Optional[Dict[str, str]]:
+    """
+    Fetch manifest for a specific platform and calculate its size.
+    Returns dict with platform and size, or None on error.
+    """
+    try:
+        # Fetch individual platform manifest
+        platform_manifest = fetch_manifest(registry, repository, digest, token)
+        
+        platform_size = get_formatted_manifest_size(platform_manifest)
+        
+        return {
+            'platform': platform_str,
+            'size': platform_size
+        }
+    except Exception as e:
+        print(f"Warning: Failed to fetch manifest for {platform_str}: {e}", file=sys.stderr)
+        return None
+
+
 def get_image_sizes(image):
     """
     Query OCI registry and get platform sizes.
     Returns a list of dicts with platform and size.
+    Fetches platform manifests in parallel for better performance.
     """
     try:
         registry, repository, tag = parse_image_name(image)
@@ -194,7 +219,9 @@ def get_image_sizes(image):
             'application/vnd.docker.distribution.manifest.list.v2+json',
             'application/vnd.oci.image.index.v1+json'
         ]:
-            # Multi-platform manifest
+            # Multi-platform manifest - fetch all platforms in parallel
+            platform_tasks = []
+            
             for item in manifest.get('manifests', []):
                 platform_info = item.get('platform', {})
                 
@@ -205,15 +232,19 @@ def get_image_sizes(image):
                 
                 digest = item.get('digest')
                 if digest:
-                    # Fetch individual platform manifest
-                    platform_manifest = fetch_manifest(registry, repository, digest)
-                    
-                    platform_size = get_formatted_manifest_size(platform_manifest)
-                    
-                    platforms.append({
-                        'platform': platform_str,
-                        'size': platform_size
-                    })
+                    platform_tasks.append((registry, repository, digest, platform_str))
+            
+            # Fetch all platform manifests in parallel
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                future_to_platform = {
+                    executor.submit(fetch_platform_size, reg, repo, dig, plat): plat
+                    for reg, repo, dig, plat in platform_tasks
+                }
+                
+                for future in concurrent.futures.as_completed(future_to_platform):
+                    result = future.result()
+                    if result:
+                        platforms.append(result)
         else:
             # Single platform manifest
             platform_info = manifest.get('platform', {})
